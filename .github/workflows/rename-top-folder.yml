@@ -1,0 +1,64 @@
+# Repack assets of the tools release with their top folder renamed, and upload the copies beside them (README.md, "How
+# they are made"). Run by hand: Actions > Rename an archive's top folder > Run workflow. Each copy holds the same files,
+# byte for byte, with the same timestamps and attributes (scripts/rename_top_folder.py checks it), and is named for its
+# own SHA-256 as every asset is. Nothing is replaced or deleted: the originals stay, so tools.lock lines that name them
+# keep working until a timeLink pull request moves them to the copies. The run's summary lists each copy's SHA-256 and
+# size, which is what that pull request pins.
+name: Rename an archive's top folder
+
+on:
+  workflow_dispatch:
+    inputs:
+      assets:
+        description: the assets to repack, by their full names, separated by spaces
+        required: true
+      from:
+        description: the top folder in those archives
+        required: true
+        default: HookshotBuilder
+      to:
+        description: what it becomes
+        required: true
+        default: timeLinkBuilder
+
+permissions:
+  contents: write
+
+jobs:
+  repack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (the pin timeLink uses)
+      - name: Repack and upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSETS: ${{ inputs.assets }}
+          FROM: ${{ inputs.from }}
+          TO: ${{ inputs.to }}
+        run: |
+          set -euo pipefail
+          mkdir -p work
+          echo "| Asset | Copy | SHA-256 | Size |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          for asset in $ASSETS; do
+            case "$asset" in
+              *[!A-Za-z0-9._-]*|-*) echo "not an asset name: $asset"; exit 1 ;;
+            esac
+            gh release download tools --pattern "$asset" --dir work --clobber
+            # (an asset is named for its SHA-256: the download must be that archive)
+            got=$(sha256sum "work/$asset" | cut -d' ' -f1)
+            [ "$got" = "${asset%%-*}" ] || { echo "$asset: its SHA-256 is $got"; exit 1; }
+            tool=${asset#*-}
+            line=$(python3 -I scripts/rename_top_folder.py "work/$asset" "$FROM" "$TO" work/new.zip)
+            echo "$asset: $line"
+            sha=${line%% *}; rest=${line#* }; size=${rest%% *}
+            copy="$sha-$tool"
+            mv work/new.zip "work/$copy"
+            if gh release view tools --json assets --jq '.assets[].name' | grep -qx "$copy"; then
+              echo "$copy is already on the release: not uploaded again"
+            else
+              gh release upload tools "work/$copy"
+            fi
+            echo "| \`$asset\` | \`$copy\` | \`$sha\` | $size |" >> "$GITHUB_STEP_SUMMARY"
+          done

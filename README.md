@@ -27,9 +27,13 @@ therefore caught. **Never reuse a version string**: a new archive is a new asset
 
 ## How they are made
 
-`scripts/rehost_tools.py` in the timeLink repository stages them: it downloads each archive from the first URL
-`tools.lock` names, checks it against the recorded SHA-256 and size, and writes it here under its asset name.
-`scripts/tools.py mirror` uploads a new one when a tool is bumped.
+`scripts/tools.py mirror` in the timeLink repository uploads a new one when a tool is bumped: it downloads the archive,
+checks it against the SHA-256 and size `tools.lock` records, and uploads it here under its asset name. (The first copies
+were staged once by a script since removed from timeLink.)
+
+`scripts/rename_top_folder.py` here repacks an archive with its top folder renamed and every file otherwise unchanged,
+and checks that the two trees are identical. The *Rename an archive's top folder* workflow runs it on assets of the
+release and uploads the copies beside them; it replaces and deletes nothing.
 
 ## Licences
 
